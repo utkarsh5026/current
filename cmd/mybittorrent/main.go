@@ -2,42 +2,26 @@ package main
 
 import (
 	"encoding/json"
+	"github.com/codecrafters-io/bittorrent-starter-go/cmd/mybittorrent/bencode"
+
 	// Uncomment this line to pass the first stage
 	// "encoding/json"
 	"fmt"
 	"os"
-	"strconv"
-	"unicode"
 	// bencode "github.com/jackpal/bencode-go" // Available if you need it!
 )
 
-// Example:
-// - 5:hello -> hello
-// - 10:hello12345 -> hello12345
-func decodeBencode(bencodedString string) (interface{}, error) {
-	if unicode.IsDigit(rune(bencodedString[0])) {
-		var firstColonIndex int
-
-		for i := 0; i < len(bencodedString); i++ {
-			if bencodedString[i] == ':' {
-				firstColonIndex = i
-				break
-			}
+func convertNilToEmpty(v interface{}) interface{} {
+	switch v := v.(type) {
+	case []interface{}:
+		if v == nil {
+			return []interface{}{}
 		}
-
-		lengthStr := bencodedString[:firstColonIndex]
-
-		length, err := strconv.Atoi(lengthStr)
-		if err != nil {
-			return "", err
+		for i, elem := range v {
+			v[i] = convertNilToEmpty(elem)
 		}
-
-		return bencodedString[firstColonIndex+1 : firstColonIndex+1+length], nil
-	} else if rune(bencodedString[0]) == 'i' {
-		return strconv.Atoi(bencodedString[1 : len(bencodedString)-1])
-	} else {
-		return "", fmt.Errorf("Only strings are supported at the moment")
 	}
+	return v
 }
 
 func main() {
@@ -47,14 +31,16 @@ func main() {
 
 		bencodedValue := os.Args[2]
 
-		decoded, err := decodeBencode(bencodedValue)
+		decoder := bencode.NewDecoder(bencodedValue)
+		decoded, err := decoder.Decode()
+		decoded = convertNilToEmpty(decoded)
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
 
 		jsonOutput, _ := json.Marshal(decoded)
-		fmt.Println(string(jsonOutput))
+		fmt.Printf("%s\n", jsonOutput)
 	} else {
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
