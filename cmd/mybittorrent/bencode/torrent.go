@@ -1,6 +1,8 @@
 package bencode
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type TorrentInfo struct {
 	Announce    string
