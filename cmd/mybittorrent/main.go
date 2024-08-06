@@ -20,6 +20,14 @@ func convertNilToEmpty(v interface{}) interface{} {
 		for i, elem := range v {
 			v[i] = convertNilToEmpty(elem)
 		}
+
+	case map[string]interface{}:
+		if v == nil {
+			return map[string]interface{}{}
+		}
+		for key, elem := range v {
+			v[key] = convertNilToEmpty(elem)
+		}
 	}
 	return v
 }
