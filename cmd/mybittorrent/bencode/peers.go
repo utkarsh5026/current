@@ -93,6 +93,15 @@ func ExtractPeers(trackerResp []byte) ([]string, error) {
 	return peers, nil
 }
 
+// HandShakeWithPeer establishes a TCP connection with a peer and performs a BitTorrent handshake.
+//
+// Parameters:
+// - t: A TorrentInfo struct containing the torrent metadata.
+// - peerAddress: A string containing the address of the peer in the format "IP:port".
+//
+// Returns:
+// - A byte slice containing the handshake response from the peer.
+// - An error if any step in the process fails
 func HandShakeWithPeer(t TorrentInfo, peerAddress string) ([]byte, error) {
 	conn, err := net.Dial("tcp", peerAddress)
 	if err != nil {
@@ -124,6 +133,14 @@ func HandShakeWithPeer(t TorrentInfo, peerAddress string) ([]byte, error) {
 	return response, nil
 }
 
+// createHandShakeMessage creates a BitTorrent handshake message.
+//
+// Parameters:
+// - infoHash: A byte slice containing the info hash of the torrent.
+// - peerId: A string containing the peer ID.
+//
+// Returns:
+// - A byte slice representing the handshake message.
 func createHandShakeMessage(infoHash []byte, peerId string) []byte {
 	protocolString := "BitTorrent protocol"
 	handShake := make([]byte, 0, 68)
