@@ -32,25 +32,54 @@ func convertNilToEmpty(v interface{}) interface{} {
 	return v
 }
 
+func decodeBencodedValue(bencodedValue string) string {
+	decoder := bencode.NewDecoder(bencodedValue)
+	decoded, err := decoder.Decode()
+	if err != nil {
+		fmt.Println("Error decoding bencoded value: " + err.Error())
+		os.Exit(1)
+	}
+
+	decoded = convertNilToEmpty(decoded)
+	jsonOutput, err := json.Marshal(decoded)
+	if err != nil {
+		fmt.Println("Error encoding JSON: " + err.Error())
+		os.Exit(1)
+	}
+
+	return string(jsonOutput)
+}
+
 func main() {
 	command := os.Args[1]
 
-	if command == "decode" {
+	switch command {
+	case "decode":
+		decodedValue := decodeBencodedValue(os.Args[2])
+		fmt.Println(decodedValue)
 
-		bencodedValue := os.Args[2]
+	case "info":
+		fileName := os.Args[2]
+		contents, err := os.ReadFile(fileName)
 
-		decoder := bencode.NewDecoder(bencodedValue)
-		decoded, err := decoder.Decode()
-		decoded = convertNilToEmpty(decoded)
 		if err != nil {
-			fmt.Println(err)
-			return
+			fmt.Println("Error reading file: " + err.Error())
+			os.Exit(1)
 		}
 
-		jsonOutput, _ := json.Marshal(decoded)
-		fmt.Printf("%s\n", jsonOutput)
-	} else {
+		parser := bencode.CreateParser(string(contents))
+		torrentInfo, err := parser.ParseTorrent()
+
+		if err != nil {
+			fmt.Println("Error parsing torrent: " + err.Error())
+			os.Exit(1)
+		}
+
+		torrentInfo.PrintStats()
+
+	default:
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
 	}
+
 }
