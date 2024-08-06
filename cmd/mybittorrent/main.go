@@ -77,6 +77,34 @@ func main() {
 
 		torrentInfo.PrintStats()
 
+	case "peers":
+		fileName := os.Args[2]
+		contents, err := os.ReadFile(fileName)
+
+		if err != nil {
+			fmt.Println("Error reading file: " + err.Error())
+			os.Exit(1)
+		}
+
+		parser := bencode.CreateParser(string(contents))
+		torrentInfo, err := parser.ParseTorrent()
+
+		if err != nil {
+			fmt.Println("Error parsing torrent: " + err.Error())
+			os.Exit(1)
+		}
+
+		trackerResp, err := bencode.CallTracker(*torrentInfo)
+		if err != nil {
+			fmt.Println("Error calling tracker: " + err.Error())
+			os.Exit(1)
+		}
+
+		peers, err := bencode.ExtractPeers(trackerResp)
+		for _, peer := range peers {
+			fmt.Println(peer)
+		}
+
 	default:
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)

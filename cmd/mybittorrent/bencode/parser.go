@@ -22,6 +22,11 @@ func (p *Parser) Parse() (interface{}, error) {
 	return p.decoder.Decode()
 }
 
+// ParseTorrent parses the torrent file and extracts the relevant information.
+//
+// Returns:
+// - A pointer to a TorrentInfo struct containing the parsed torrent information.
+// - An error if any required field is missing or if there is an error during parsing.
 func (p *Parser) ParseTorrent() (*TorrentInfo, error) {
 	value, err := p.Parse()
 	if err != nil {
@@ -94,14 +99,24 @@ func calculateInfoHash(parser *Parser, info map[string]interface{}) (string, err
 	return hex.EncodeToString(hash[:]), nil
 }
 
+// extractPieceHashes extracts SHA-1 hash pieces from a given string.
+// The pieces string is expected to be a concatenation of 20-byte SHA-1 hashes.
+//
+// Parameters:
+// - pieces: A string containing the concatenated SHA-1 hashes.
+//
+// Returns:
+// - A slice of strings, each representing a hexadecimal-encoded SHA-1 hash.
+// - An error if the length of the pieces string is not a multiple of 20.
 func extractPieceHashes(pieces string) ([]string, error) {
-	if len(pieces)%20 != 0 {
+	hashLength := 20
+	if len(pieces)%hashLength != 0 {
 		return nil, fmt.Errorf("invalid pieces length")
 	}
 
 	var hashes []string
-	for i := 0; i < len(pieces); i += 20 {
-		hash := pieces[i : i+20]
+	for i := 0; i < len(pieces); i += hashLength {
+		hash := pieces[i : i+hashLength]
 		hashes = append(hashes, hex.EncodeToString([]byte(hash)))
 	}
 
