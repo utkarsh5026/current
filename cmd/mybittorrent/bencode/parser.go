@@ -48,21 +48,33 @@ func (p *Parser) ParseTorrent() (*TorrentInfo, error) {
 		return nil, fmt.Errorf("missing length")
 	}
 
-	hash, err := CalculateInfoHash(p, info)
+	pieceLength, ok := info["piece length"].(int)
+	if !ok {
+		return nil, fmt.Errorf("missing piece length")
+	}
+
+	pieces, ok := info["pieces"].(string)
+	if !ok {
+		return nil, fmt.Errorf("missing pieces")
+	}
+	hash, err := calculateInfoHash(p, info)
+	piecesHashes, err := extractPieceHashes(pieces)
 
 	if err != nil {
 		return nil, err
 	}
 
 	return &TorrentInfo{
-		Announce: announce,
-		Length:   int64(length),
-		Info:     info,
-		InfoHash: hash,
+		Announce:    announce,
+		Length:      int64(length),
+		Info:        info,
+		InfoHash:    hash,
+		PieceLength: int64(pieceLength),
+		PieceHashes: piecesHashes,
 	}, nil
 }
 
-// CalculateInfoHash calculates the SHA-1 hash of the encoded info dictionary.
+// calculateInfoHash calculates the SHA-1 hash of the encoded info dictionary.
 // The info dictionary is first encoded into a bencoded string, and then the SHA-1 hash is computed.
 //
 // Parameters:
@@ -72,7 +84,7 @@ func (p *Parser) ParseTorrent() (*TorrentInfo, error) {
 // Returns:
 // - A string containing the hexadecimal representation of the SHA-1 hash.
 // - An error if the encoding of the info dictionary fails.
-func CalculateInfoHash(parser *Parser, info map[string]interface{}) (string, error) {
+func calculateInfoHash(parser *Parser, info map[string]interface{}) (string, error) {
 	encoded, err := parser.encoder.encodeDict(info)
 	if err != nil {
 		return "", err
@@ -80,4 +92,18 @@ func CalculateInfoHash(parser *Parser, info map[string]interface{}) (string, err
 
 	hash := sha1.Sum([]byte(encoded))
 	return hex.EncodeToString(hash[:]), nil
+}
+
+func extractPieceHashes(pieces string) ([]string, error) {
+	if len(pieces)%20 != 0 {
+		return nil, fmt.Errorf("invalid pieces length")
+	}
+
+	var hashes []string
+	for i := 0; i < len(pieces); i += 20 {
+		hash := pieces[i : i+20]
+		hashes = append(hashes, hex.EncodeToString([]byte(hash)))
+	}
+
+	return hashes, nil
 }
