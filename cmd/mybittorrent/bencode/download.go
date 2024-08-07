@@ -11,22 +11,27 @@ import (
 )
 
 const (
-	MsgChoke         = 0
-	MsgUnChoke       = 1
-	MsgInterested    = 2
-	MsgNotInterested = 3
-	MsgHave          = 4
-	MsgBitfield      = 5
-	MsgRequest       = 6
-	MsgPiece         = 7
-	MsgCancel        = 8
+	MsgUnChoke    = 1
+	MsgInterested = 2
+	MsgBitfield   = 5
+	MsgRequest    = 6
+	MsgPiece      = 7
 )
 
 const (
 	BlockSize = 16 * 1024 // 16KB
 )
 
-func DownLoadFile(t TorrentInfo, outputFile string, pieceIdx int) error {
+// DownLoadFile downloads the specified pieces of a torrent file and writes them to an output file.
+//
+// Parameters:
+// - t: A TorrentInfo struct containing information about the torrent.
+// - outputFile: A string representing the path to the output file where the downloaded data will be written.
+// - pieceIndices: A variadic integer slice representing the indices of the pieces to be downloaded.
+//
+// Returns:
+// - An error if any step in the process fails.
+func DownLoadFile(t TorrentInfo, outputFile string, pieceIndices ...int) error {
 	trackerResp, err := CallTracker(t)
 	if err != nil {
 		return err
@@ -56,37 +61,58 @@ func DownLoadFile(t TorrentInfo, outputFile string, pieceIdx int) error {
 		}
 	}(conn)
 
-	fmt.Println("Downloading piece", pieceIdx)
-	piece, err := downloadPiece(conn, t, pieceIdx)
-	if err != nil {
-		return fmt.Errorf("error downloading piece: %w", err)
+	if err := establishConnectionToDownloadPiece(conn); err != nil {
+		return fmt.Errorf("error establishing connection: %w", err)
 	}
 
-	if !verifyPiece(piece, []byte(t.PieceHashes[pieceIdx])) {
-		return fmt.Errorf("piece hash does not match")
+	var fileData []byte
+	for _, pieceIdx := range pieceIndices {
+		piece, err := downloadPiece(conn, t, pieceIdx)
+		if err != nil {
+			return fmt.Errorf("error downloading piece: %w", err)
+		}
+
+		fileData = append(fileData, piece...)
 	}
 
-	return os.WriteFile(outputFile, piece, 0644)
+	return os.WriteFile(outputFile, fileData, os.ModePerm)
 }
 
-func downloadPiece(conn net.Conn, t TorrentInfo, pieceIndex int) ([]byte, error) {
+// establishConnectionToDownloadPiece establishes a connection to download a piece from a peer.
+//
+// Parameters:
+// - conn: A net.Conn representing the TCP connection to the peer.
+//
+// Returns:
+// - An error if any step in the process fails.
+func establishConnectionToDownloadPiece(conn net.Conn) error {
 	reader := bufio.NewReader(conn)
-
-	fmt.Println("Waiting for bitfield")
 	if err := waitForBitField(reader); err != nil {
-		return nil, err
+		return err
 	}
 
-	fmt.Println("Sending interested")
 	if err := sendInterested(conn); err != nil {
-		return nil, err
+		return err
 	}
 
-	fmt.Println("Waiting for unchoke")
 	if err := waitForUnChoke(reader); err != nil {
-		return nil, err
+		return err
 	}
 
+	return nil
+}
+
+// downloadPiece downloads a specific piece from a peer and verifies its hash.
+//
+// Parameters:
+// - conn: A net.Conn representing the TCP connection to the peer.
+// - t: A TorrentInfo struct containing information about the torrent.
+// - pieceIndex: An integer representing the index of the piece to be downloaded.
+//
+// Returns:
+// - A byte slice containing the downloaded piece data.
+// - An error if any step in the process fails.
+func downloadPiece(conn net.Conn, t TorrentInfo, pieceIndex int) ([]byte, error) {
 	pieceSize := t.PieceLength
 	pieceCnt := int(math.Ceil(float64(t.Length) / float64(pieceSize)))
 	if pieceIndex == pieceCnt-1 {
@@ -95,28 +121,32 @@ func downloadPiece(conn net.Conn, t TorrentInfo, pieceIndex int) ([]byte, error)
 
 	blockCnt := int(math.Ceil(float64(pieceSize) / float64(BlockSize)))
 
-	var data []byte
+	var piece []byte
 	for i := 0; i < blockCnt; i++ {
 		blockLength := BlockSize
 		if i == blockCnt-1 {
 			blockLength = int(pieceSize) - ((blockCnt - 1) * BlockSize)
 		}
 
+		index := i * BlockSize
 		// Send request for block
-		if err := sendRequest(conn, pieceIndex, i*BlockSize, blockLength); err != nil {
+		if err := sendRequest(conn, pieceIndex, index, blockLength); err != nil {
 			return nil, fmt.Errorf("error sending request: %w", err)
 		}
 
 		// Receive block
-		block, err := receivePiece(reader, pieceIndex, i*BlockSize)
+		block, err := receivePiece(conn, pieceIndex, index)
 		if err != nil {
 			return nil, fmt.Errorf("error receiving block: %w", err)
 		}
 
-		data = append(data, block...)
+		piece = append(piece, block...)
 	}
 
-	return data, nil
+	if !verifyPiece(piece, []byte(t.PieceHashes[pieceIndex])) {
+		return nil, fmt.Errorf("piece hash does not match")
+	}
+	return piece, nil
 }
 
 // waitForBitField waits for a bitfield message from the peer.
@@ -194,7 +224,6 @@ func waitForUnChoke(reader *bufio.Reader) error {
 // Returns:
 // - An error if the message could not be sent.
 func sendRequest(conn net.Conn, index, begin, length int) error {
-	fmt.Println("sending request", index, begin, length)
 	message := make([]byte, 17)
 	binary.BigEndian.PutUint32(message[:4], uint32(13)) // Length of the message
 	message[4] = MsgRequest                             // Request message ID
@@ -206,7 +235,18 @@ func sendRequest(conn net.Conn, index, begin, length int) error {
 	return err
 }
 
-func receivePiece(reader *bufio.Reader, expectedIndex, expectedBegin int) ([]byte, error) {
+// receivePiece reads a piece message from the peer and verifies its index and begin offset.
+//
+// Parameters:
+// - conn: A net.Conn representing the TCP connection to the peer.
+// - expectedIndex: An integer representing the expected piece index.
+// - expectedBegin: An integer representing the expected beginning offset within the piece.
+//
+// Returns:
+// - A byte slice containing the piece data.
+// - An error if any step in the process fails or if the received piece does not match the expected index and begin offset
+func receivePiece(conn net.Conn, expectedIndex, expectedBegin int) ([]byte, error) {
+	reader := bufio.NewReader(conn)
 	msgLen, msgId, err := readMessageHeader(reader)
 	if err != nil {
 		return nil, err
@@ -243,7 +283,6 @@ func receivePiece(reader *bufio.Reader, expectedIndex, expectedBegin int) ([]byt
 func readMessageHeader(reader *bufio.Reader) (int, byte, error) {
 	lengthBuf := make([]byte, 4)
 	if _, err := io.ReadFull(reader, lengthBuf); err != nil {
-		fmt.Println("error reading length")
 		return 0, 0, err
 	}
 
@@ -254,7 +293,6 @@ func readMessageHeader(reader *bufio.Reader) (int, byte, error) {
 
 	idBuffer := make([]byte, 1)
 	if _, err := io.ReadFull(reader, idBuffer); err != nil {
-		fmt.Println("error reading id")
 		return 0, 0, err
 	}
 

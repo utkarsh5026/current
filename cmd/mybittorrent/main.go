@@ -116,9 +116,25 @@ func downloadPiece(torrentFile, outputPath string, pieceIdx int) error {
 	if err != nil {
 		return err
 	}
-
-	torrentInfo.PrintStats()
+	
 	return bencode.DownLoadFile(*torrentInfo, outputPath, pieceIdx)
+}
+
+func downloadAllPieces(torrentFile, outputPath string) error {
+	contents := readTorrentFile(torrentFile)
+	parser := bencode.CreateParser(contents)
+
+	torrentInfo, err := parser.ParseTorrent()
+	if err != nil {
+		return err
+	}
+
+	pieceIndices := make([]int, len(torrentInfo.PieceHashes))
+	for i := range pieceIndices {
+		pieceIndices[i] = i
+	}
+
+	return bencode.DownLoadFile(*torrentInfo, outputPath, pieceIndices...)
 }
 
 func main() {
@@ -159,6 +175,13 @@ func main() {
 		exitIfError(err)
 
 		err = downloadPiece(fileName, outputPPath, pieceIdx)
+		exitIfError(err)
+
+	case "download":
+		outputPath := os.Args[3]
+		fileName := os.Args[4]
+
+		err := downloadAllPieces(fileName, outputPath)
 		exitIfError(err)
 
 	default:

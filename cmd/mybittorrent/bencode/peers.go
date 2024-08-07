@@ -100,6 +100,7 @@ func ExtractPeers(trackerResp []byte) ([]string, error) {
 // - peerAddress: A string containing the address of the peer in the format "IP:port".
 //
 // Returns:
+// - A net.Conn representing the TCP connection to the peer.
 // - A byte slice containing the handshake response from the peer.
 // - An error if any step in the process fails
 func HandShakeWithPeer(t TorrentInfo, peerAddress string) (net.Conn, []byte, error) {
