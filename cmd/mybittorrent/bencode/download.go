@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"os"
 )
@@ -56,9 +57,9 @@ func DownLoadFile(t TorrentInfo, outputFile string, pieceIdx int) error {
 	}(conn)
 
 	fmt.Println("Downloading piece", pieceIdx)
-	piece, err := downloadPiece(conn, pieceIdx, int(t.PieceLength))
+	piece, err := downloadPiece(conn, t, pieceIdx)
 	if err != nil {
-		return err
+		return fmt.Errorf("error downloading piece: %w", err)
 	}
 
 	if !verifyPiece(piece, []byte(t.PieceHashes[pieceIdx])) {
@@ -68,7 +69,7 @@ func DownLoadFile(t TorrentInfo, outputFile string, pieceIdx int) error {
 	return os.WriteFile(outputFile, piece, 0644)
 }
 
-func downloadPiece(conn net.Conn, pieceIndex, pieceLength int) ([]byte, error) {
+func downloadPiece(conn net.Conn, t TorrentInfo, pieceIndex int) ([]byte, error) {
 	reader := bufio.NewReader(conn)
 
 	fmt.Println("Waiting for bitfield")
@@ -86,29 +87,36 @@ func downloadPiece(conn net.Conn, pieceIndex, pieceLength int) ([]byte, error) {
 		return nil, err
 	}
 
-	fmt.Println("piece", pieceLength)
-	piece := make([]byte, pieceLength)
-
-	for i := 0; i < len(piece); i += BlockSize {
-		length := BlockSize
-		if i+length > len(piece) {
-			length = len(piece) - i
-		}
-
-		if err := sendRequest(conn, pieceIndex, i, length); err != nil {
-			fmt.Println("error sending request")
-			return nil, err
-		}
-
-		block, err := receivePiece(reader, pieceIndex, i)
-		if err != nil {
-			return nil, err
-		}
-
-		copy(piece[i:], block)
+	pieceSize := t.PieceLength
+	pieceCnt := int(math.Ceil(float64(t.Length) / float64(pieceSize)))
+	if pieceIndex == pieceCnt-1 {
+		pieceSize = t.Length % t.PieceLength
 	}
 
-	return piece, nil
+	blockCnt := int(math.Ceil(float64(pieceSize) / float64(BlockSize)))
+
+	var data []byte
+	for i := 0; i < blockCnt; i++ {
+		blockLength := BlockSize
+		if i == blockCnt-1 {
+			blockLength = int(pieceSize) - ((blockCnt - 1) * BlockSize)
+		}
+
+		// Send request for block
+		if err := sendRequest(conn, pieceIndex, i*BlockSize, blockLength); err != nil {
+			return nil, fmt.Errorf("error sending request: %w", err)
+		}
+
+		// Receive block
+		block, err := receivePiece(reader, pieceIndex, i*BlockSize)
+		if err != nil {
+			return nil, fmt.Errorf("error receiving block: %w", err)
+		}
+
+		data = append(data, block...)
+	}
+
+	return data, nil
 }
 
 // waitForBitField waits for a bitfield message from the peer.
