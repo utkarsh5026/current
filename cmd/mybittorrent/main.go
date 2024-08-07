@@ -3,14 +3,18 @@ package main
 import (
 	"encoding/hex"
 	"encoding/json"
-	"github.com/codecrafters-io/bittorrent-starter-go/cmd/mybittorrent/bencode"
-
-	// Uncomment this line to pass the first stage
-	// "encoding/json"
 	"fmt"
+	"github.com/codecrafters-io/bittorrent-starter-go/cmd/mybittorrent/bencode"
+	"net"
 	"os"
-	// bencode "github.com/jackpal/bencode-go" // Available if you need it!
+	"strconv"
 )
+
+func readTorrentFile(fileName string) string {
+	contents, err := os.ReadFile(fileName)
+	exitIfError(err)
+	return string(contents)
+}
 
 func convertNilToEmpty(v interface{}) interface{} {
 	switch v := v.(type) {
@@ -36,17 +40,11 @@ func convertNilToEmpty(v interface{}) interface{} {
 func decodeBencodedValue(bencodedValue string) string {
 	decoder := bencode.NewDecoder(bencodedValue)
 	decoded, err := decoder.Decode()
-	if err != nil {
-		fmt.Println("Error decoding bencoded value: " + err.Error())
-		os.Exit(1)
-	}
+	exitIfError(err)
 
 	decoded = convertNilToEmpty(decoded)
 	jsonOutput, err := json.Marshal(decoded)
-	if err != nil {
-		fmt.Println("Error encoding JSON: " + err.Error())
-		os.Exit(1)
-	}
+	exitIfError(err)
 
 	return string(jsonOutput)
 }
@@ -92,16 +90,35 @@ func printPeerIdFromHandshake(fileName string, peerAddress string) error {
 		return fmt.Errorf("error parsing torrent: %w", err)
 	}
 
-	handshake, err := bencode.HandShakeWithPeer(*torrentInfo, peerAddress)
+	conn, handshake, err := bencode.HandShakeWithPeer(*torrentInfo, peerAddress)
 	if err != nil {
 		return fmt.Errorf("error handshaking with peer: %w", err)
 	}
+
+	defer func(conn net.Conn) {
+		err := conn.Close()
+		if err != nil {
+
+		}
+	}(conn)
 
 	peerId := handshake[48:]
 	fmt.Printf("Peer ID: %s\n", hex.EncodeToString(peerId))
 
 	return nil
+}
 
+func downloadPiece(torrentFile, outputPath string, pieceIdx int) error {
+	contents := readTorrentFile(torrentFile)
+	parser := bencode.CreateParser(contents)
+
+	torrentInfo, err := parser.ParseTorrent()
+	if err != nil {
+		return err
+	}
+
+	torrentInfo.PrintStats()
+	return bencode.DownLoadFile(*torrentInfo, outputPath, pieceIdx)
 }
 
 func main() {
@@ -115,44 +132,45 @@ func main() {
 	case "info":
 		fileName := os.Args[2]
 		contents, err := os.ReadFile(fileName)
-
-		if err != nil {
-			fmt.Println("Error reading file: " + err.Error())
-			os.Exit(1)
-		}
+		exitIfError(err)
 
 		parser := bencode.CreateParser(string(contents))
 		torrentInfo, err := parser.ParseTorrent()
-
-		if err != nil {
-			fmt.Println("Error parsing torrent: " + err.Error())
-			os.Exit(1)
-		}
+		exitIfError(err)
 
 		torrentInfo.PrintStats()
 
 	case "peers":
 		fileName := os.Args[2]
 		err := showPeers(fileName)
-
-		if err != nil {
-			fmt.Println("Error showing peers: " + err.Error())
-			os.Exit(1)
-		}
+		exitIfError(err)
 
 	case "handshake":
 		fileName := os.Args[2]
 		peerAddress := os.Args[3]
 
 		err := printPeerIdFromHandshake(fileName, peerAddress)
+		exitIfError(err)
 
-		if err != nil {
-			fmt.Println("Error printing peer ID: " + err.Error())
-			os.Exit(1)
-		}
+	case "download_piece":
+		outputPPath := os.Args[3]
+		fileName := os.Args[4]
+		pieceIdx, err := strconv.Atoi(os.Args[5])
+		exitIfError(err)
+
+		err = downloadPiece(fileName, outputPPath, pieceIdx)
+		exitIfError(err)
+
 	default:
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
 	}
 
+}
+
+func exitIfError(err error) {
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 }

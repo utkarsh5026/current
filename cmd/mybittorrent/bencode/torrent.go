@@ -1,6 +1,8 @@
 package bencode
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 )
 
@@ -23,4 +25,9 @@ func (t TorrentInfo) PrintStats() {
 	for _, hash := range t.PieceHashes {
 		fmt.Printf("\t%v\n", hash)
 	}
+}
+
+func verifyPiece(piece []byte, expectedHash []byte) bool {
+	hash := sha1.Sum(piece)
+	return hex.EncodeToString(hash[:]) == string(expectedHash)
 }

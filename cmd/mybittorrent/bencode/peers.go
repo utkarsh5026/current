@@ -102,18 +102,25 @@ func ExtractPeers(trackerResp []byte) ([]string, error) {
 // Returns:
 // - A byte slice containing the handshake response from the peer.
 // - An error if any step in the process fails
-func HandShakeWithPeer(t TorrentInfo, peerAddress string) ([]byte, error) {
-	conn, err := net.Dial("tcp", peerAddress)
+func HandShakeWithPeer(t TorrentInfo, peerAddress string) (net.Conn, []byte, error) {
+	conn, err := connectToPeer(peerAddress, t)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	response := make([]byte, 68)
+	if _, err := conn.Read(response); err != nil {
+		return nil, nil, err
+	}
+
+	return conn, response, nil
+}
+
+func connectToPeer(addr string, t TorrentInfo) (net.Conn, error) {
+	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		return nil, err
 	}
-
-	defer func(conn net.Conn) {
-		err := conn.Close()
-		if err != nil {
-			fmt.Println("Error closing connection: " + err.Error())
-		}
-	}(conn)
 
 	infoHashBytes, err := hex.DecodeString(t.InfoHash)
 	if err != nil {
@@ -125,12 +132,7 @@ func HandShakeWithPeer(t TorrentInfo, peerAddress string) ([]byte, error) {
 		return nil, err
 	}
 
-	response := make([]byte, 68)
-	if _, err := conn.Read(response); err != nil {
-		return nil, err
-	}
-
-	return response, nil
+	return conn, nil
 }
 
 // createHandShakeMessage creates a BitTorrent handshake message.
